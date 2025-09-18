@@ -2,11 +2,11 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY          = "docker.io"
-        REGISTRY_NAMESPACE= "ramm978"               // your Docker Hub username
-        IMAGE_NAME        = "sampleapp"             // your app image name
-        K8S_NAMESPACE     = "demo"                  // Kubernetes namespace
-        SONARQUBE_SERVER  = "SonarQube"             // Jenkins SonarQube server name
+        REGISTRY           = "docker.io"
+        REGISTRY_NAMESPACE = "ramm978"                 // your Docker Hub username
+        IMAGE_NAME         = "sampleapp"               // your app image name
+        K8S_NAMESPACE      = "demo"                    // Kubernetes namespace
+        SONARQUBE_SERVER   = "SonarQube"               // Jenkins SonarQube server name
     }
 
     stages {
@@ -14,7 +14,8 @@ pipeline {
             steps {
                 git branch: 'name.developer',
                     credentialsId: 'github-token',
-                    url: 'https://github.com/1mohanr/SampleApp.git'
+                    url: 'https://github.com/1mohanr/mohan-end-to-end-assignment.git'
+
                 script {
                     env.IMAGE_TAG = sh(
                         script: 'git rev-parse --short HEAD',
@@ -32,6 +33,9 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
+            environment {
+                SONARQUBE_TOKEN = credentials('sonarqube-token') // Jenkins Secret Text
+            }
             steps {
                 withSonarQubeEnv('SonarQube') {
                     sh """
