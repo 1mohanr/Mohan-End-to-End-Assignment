@@ -1,0 +1,6 @@
+projectKey=SampleApp
+serverUrl=http://3.107.189.219:9000
+serverVersion=25.9.0.112764
+dashboardUrl=http://3.107.189.219:9000/dashboard?id=SampleApp
+ceTaskId=a08b9f7b-b14b-4968-bc2c-989fadb09366
+ceTaskUrl=http://3.107.189.219:9000/api/ce/task?id=a08b9f7b-b14b-4968-bc2c-989fadb09366

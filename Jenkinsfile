@@ -16,7 +16,7 @@ pipeline {
 
         stage('SonarQube Scan') {
             steps {
-                withCredentials([string(credentialsId: 'SampleApp', variable: 'SONAR_TOKEN')]) {
+                withCredentials([string(credentialsId: 'Sample_app', variable: 'SONAR_TOKEN')]) {
                     echo 'Running SonarQube analysis...'
                     sh """
                         mvn clean verify sonar:sonar \
