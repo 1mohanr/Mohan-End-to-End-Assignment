@@ -9,7 +9,7 @@ pipeline {
         stage('Checkout SCM') {
             steps {
                 checkout([$class: 'GitSCM',
-                          branches: [[name: '*/developer']],
+                          branches: [[name: '*/name.developer']],
                           userRemoteConfigs: [[url: 'https://github.com/1mohanr/Mohan-End-to-End-Assignment.git']]])
             }
         }
