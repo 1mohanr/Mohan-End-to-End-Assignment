@@ -2,94 +2,53 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY           = "docker.io"
-        REGISTRY_NAMESPACE = "ramm978"                 // your Docker Hub username
-        IMAGE_NAME         = "sampleapp"               // your app image name
-        K8S_NAMESPACE      = "demo"                    // Kubernetes namespace
-        SONARQUBE_SERVER   = "SonarQube"               // Jenkins SonarQube server name
+        SONAR_HOST_URL = 'http://3.107.189.219:9000'
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout SCM') {
             steps {
-                git branch: 'name.developer',
-                    credentialsId: 'github-token',
-                    url: 'https://github.com/1mohanr/mohan-end-to-end-assignment.git'
-
-                script {
-                    env.IMAGE_TAG = sh(
-                        script: 'git rev-parse --short HEAD',
-                        returnStdout: true
-                    ).trim()
-                    echo "✅ Checked out code. Image tag will be: ${env.IMAGE_TAG}"
-                }
+                checkout([$class: 'GitSCM',
+                          branches: [[name: '*/developer']],
+                          userRemoteConfigs: [[url: 'https://github.com/1mohanr/Mohan-End-to-End-Assignment.git']]])
             }
         }
 
-        stage('Build Java App') {
+        stage('SonarQube Scan') {
             steps {
-                sh 'mvn clean package -DskipTests'
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            environment {
-                SONARQUBE_TOKEN = credentials('sonarqube-token') // Jenkins Secret Text
-            }
-            steps {
-                withSonarQubeEnv('SonarQube') {
+                withCredentials([string(credentialsId: 'Sample_app', variable: 'SONAR_TOKEN')]) {
+                    echo 'Running SonarQube analysis...'
                     sh """
-                        mvn sonar:sonar \
-                          -Dsonar.projectKey=sampleapp \
-                          -Dsonar.host.url=http://3.107.198.86:9000 \
-                          -Dsonar.login=${SONARQUBE_TOKEN}
+                        mvn clean verify sonar:sonar \
+                            -Dsonar.projectKey=SampleApp \
+                            -Dsonar.host.url=${SONAR_HOST_URL} \
+                            -Dsonar.login=${SONAR_TOKEN}
                     """
                 }
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build & Package') {
             steps {
-                sh """
-                    docker build -t $REGISTRY/$REGISTRY_NAMESPACE/$IMAGE_NAME:$IMAGE_TAG .
-                """
+                echo 'Building and packaging the project...'
+                sh 'mvn clean package'
             }
         }
+    }
 
-        stage('Push Docker Image') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-cred-id',
-                                                 usernameVariable: 'DOCKER_USER',
-                                                 passwordVariable: 'DOCKER_PASS')]) {
-                    sh """
-                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                        docker push $REGISTRY/$REGISTRY_NAMESPACE/$IMAGE_NAME:$IMAGE_TAG
-                    """
-                }
-            }
+    post {
+        success {
+            echo 'Pipeline succeeded. Archiving artifacts and publishing test results...'
+            archiveArtifacts artifacts: 'target/*.jar', allowEmptyArchive: true
+            junit 'target/surefire-reports/*.xml'
         }
 
-        stage('Deploy to Kubernetes') {
-            steps {
-                withKubeConfig([credentialsId: 'kube-config']) {
-                    sh """
-                        kubectl set image deployment/sampleapp-deployment \
-                          sampleapp=$REGISTRY/$REGISTRY_NAMESPACE/$IMAGE_NAME:$IMAGE_TAG \
-                          -n $K8S_NAMESPACE
-                    """
-                }
-            }
+        failure {
+            echo 'Pipeline failed. Check logs for details.'
         }
 
-        stage('Verify Deployment') {
-            steps {
-                withKubeConfig([credentialsId: 'kube-config']) {
-                    sh """
-                        kubectl get pods -n $K8S_NAMESPACE
-                        kubectl get svc -n $K8S_NAMESPACE
-                    """
-                }
-            }
+        always {
+            echo 'Pipeline finished.'
         }
     }
 }
