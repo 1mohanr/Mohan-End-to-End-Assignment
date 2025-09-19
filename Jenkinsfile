@@ -3,14 +3,22 @@ pipeline {
 
     environment {
         REGISTRY           = "docker.io"
-        REGISTRY_NAMESPACE = "ramm978"                 // your Docker Hub username
-        IMAGE_NAME         = "sampleapp"               // your app image name
-        K8S_NAMESPACE      = "demo"                    // Kubernetes namespace
-        SONARQUBE_SERVER   = "SonarQubeServer"         // Jenkins SonarQube server name
-        BRANCH_NAME_SAFE   = "${env.BRANCH_NAME.replaceAll('/', '-')}" // sanitize branch name
+        REGISTRY_NAMESPACE = "ramm978"
+        IMAGE_NAME         = "sampleapp"
+        K8S_NAMESPACE      = "demo"
+        SONARQUBE_SERVER   = "SonarQubeServer"
     }
 
     stages {
+        stage('Prepare') {
+            steps {
+                script {
+                    // sanitize branch name for Docker tag
+                    env.BRANCH_NAME_SAFE = env.BRANCH_NAME.replaceAll('/', '-')
+                }
+            }
+        }
+
         stage('Build Java App') {
             steps {
                 sh 'mvn clean install -DskipTests'
@@ -28,7 +36,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh "docker build -t ${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${BRANCH_NAME_SAFE}-${BUILD_NUMBER} ."
+                    sh "docker build -t ${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${env.BRANCH_NAME_SAFE}-${BUILD_NUMBER} ."
                 }
             }
         }
@@ -36,7 +44,7 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 withDockerRegistry([credentialsId: 'docker-hub', url: "https://${REGISTRY}"]) {
-                    sh "docker push ${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${BRANCH_NAME_SAFE}-${BUILD_NUMBER}"
+                    sh "docker push ${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${env.BRANCH_NAME_SAFE}-${BUILD_NUMBER}"
                 }
             }
         }
@@ -45,7 +53,7 @@ pipeline {
             steps {
                 sh """
                 kubectl set image deployment/${IMAGE_NAME} \
-                ${IMAGE_NAME}=${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${BRANCH_NAME_SAFE}-${BUILD_NUMBER} \
+                ${IMAGE_NAME}=${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${env.BRANCH_NAME_SAFE}-${BUILD_NUMBER} \
                 -n ${K8S_NAMESPACE}
                 """
             }
