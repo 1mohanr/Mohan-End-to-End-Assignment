@@ -2,62 +2,102 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY          = "docker.io"
-        REGISTRY_NAMESPACE= "ramm978"       // your Docker Hub username
-        IMAGE_NAME        = "sampleapp"     // your app image name
-        K8S_NAMESPACE     = "demo"          // Kubernetes namespace
-        SONARQUBE_SERVER  = "SonarQube"     // Jenkins SonarQube server name
+        REGISTRY           = "docker.io"
+        REGISTRY_NAMESPACE = "ramm978"        // your Docker Hub username
+        IMAGE_NAME         = "sampleapp"      // your app image name
+        K8S_NAMESPACE      = "demo"           // Kubernetes namespace
+        SONARQUBE_SERVER   = "SonarQube"      // SonarQube server configured in Jenkins
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout SCM') {
             steps {
-                git 'https://github.com/your/repo.git'
+                checkout([$class: 'GitSCM',
+                    branches: [[name: "${env.BRANCH_NAME}"]],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/1mohanr/mohan-end-to-end-assignment.git',
+                        credentialsId: 'github-token'
+                    ]]
+                ])
+                script {
+                    env.IMAGE_TAG = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    echo "✅ Checked out code. Image tag will be: ${env.IMAGE_TAG}"
+                }
             }
         }
 
         stage('Build Java App') {
             steps {
-                sh 'mvn clean install -DskipTests'
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                // Always pass this stage, even if sonar:sonar fails
-                catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
-                    withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                        sh 'mvn sonar:sonar || true'
+                script {
+                    try {
+                        sh "mvn clean package -DskipTests"
+                    } catch (Exception e) {
+                        error "❌ Maven build failed. Stopping pipeline."
                     }
                 }
             }
         }
 
-        stage('Build Docker Image') {
+        stage('SonarQube Analysis') {
+            when {
+                expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
+            }
             steps {
-                sh 'docker build -t ${REGISTRY}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:latest .'
+                withSonarQubeEnv("${SONARQUBE_SERVER}") {
+                    sh "mvn sonar:sonar"
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            when {
+                expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
+            }
+            steps {
+                sh "docker build -t ${REGISTRY}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG} ."
             }
         }
 
         stage('Push Docker Image') {
+            when {
+                expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
+            }
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-                    sh 'docker push ${REGISTRY}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:latest'
+                withCredentials([usernamePassword(credentialsId: 'dockerhub', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                    sh """
+                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    docker push ${REGISTRY}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG}
+                    """
                 }
             }
         }
 
         stage('Deploy to Kubernetes') {
+            when {
+                expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
+            }
             steps {
-                sh 'kubectl apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}'
+                sh "kubectl set image deployment/${IMAGE_NAME} ${IMAGE_NAME}=${REGISTRY}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG} -n ${K8S_NAMESPACE}"
             }
         }
 
         stage('Verify Deployment') {
-            steps {
-                sh 'kubectl get pods -n ${K8S_NAMESPACE}'
+            when {
+                expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
             }
+            steps {
+                sh "kubectl get pods -n ${K8S_NAMESPACE}"
+                sh "kubectl get svc -n ${K8S_NAMESPACE}"
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "⚠️ Pipeline failed. Check logs for details."
+        }
+        success {
+            echo "✅ Pipeline completed successfully!"
         }
     }
 }
