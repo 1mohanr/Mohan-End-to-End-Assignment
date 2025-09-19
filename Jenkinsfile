@@ -2,79 +2,53 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY           = "docker.io"
-        REGISTRY_NAMESPACE = "ramm978"
-        IMAGE_NAME         = "sampleapp"
-        K8S_NAMESPACE      = "demo"
-        SONARQUBE_SERVER   = "SonarQubeServer"
+        SONAR_HOST_URL = 'http://3.107.189.219:9000'
     }
 
     stages {
-        stage('Prepare') {
+        stage('Checkout SCM') {
             steps {
-                script {
-                    // Sanitize branch name for Docker tag, default to 'name.developer'
-                    def branchName = env.BRANCH_NAME ?: "name.developer"
-                    env.BRANCH_NAME_SAFE = branchName.replaceAll('/', '-')
-                    echo "Branch name safe for Docker: ${env.BRANCH_NAME_SAFE}"
+                checkout([$class: 'GitSCM',
+                          branches: [[name: '*/developer']],
+                          userRemoteConfigs: [[url: 'https://github.com/1mohanr/Mohan-End-to-End-Assignment.git']]])
+            }
+        }
+
+        stage('SonarQube Scan') {
+            steps {
+                withCredentials([string(credentialsId: 'Sample_app', variable: 'SONAR_TOKEN')]) {
+                    echo 'Running SonarQube analysis...'
+                    sh """
+                        mvn clean verify sonar:sonar \
+                            -Dsonar.projectKey=SampleApp \
+                            -Dsonar.host.url=${SONAR_HOST_URL} \
+                            -Dsonar.login=${SONAR_TOKEN}
+                    """
                 }
             }
         }
 
-        stage('Build Java App') {
+        stage('Build & Package') {
             steps {
-                sh 'mvn clean install -DskipTests'
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                    sh 'mvn sonar:sonar'
-                }
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    sh "docker build -t ${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${env.BRANCH_NAME_SAFE}-${BUILD_NUMBER} ."
-                }
-            }
-        }
-
-        stage('Push Docker Image') {
-            steps {
-                withDockerRegistry([credentialsId: 'docker-hub', url: "https://${REGISTRY}"]) {
-                    sh "docker push ${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${env.BRANCH_NAME_SAFE}-${BUILD_NUMBER}"
-                }
-            }
-        }
-
-        stage('Deploy to Kubernetes') {
-            steps {
-                sh """
-                kubectl set image deployment/${IMAGE_NAME} \
-                ${IMAGE_NAME}=${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${env.BRANCH_NAME_SAFE}-${BUILD_NUMBER} \
-                -n ${K8S_NAMESPACE}
-                """
-            }
-        }
-
-        stage('Verify Deployment') {
-            steps {
-                sh "kubectl rollout status deployment/${IMAGE_NAME} -n ${K8S_NAMESPACE}"
-                sh "kubectl get pods -n ${K8S_NAMESPACE}"
+                echo 'Building and packaging the project...'
+                sh 'mvn clean package'
             }
         }
     }
 
     post {
-        failure {
-            echo "⚠️ Pipeline failed. Check logs for details."
-        }
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo 'Pipeline succeeded. Archiving artifacts and publishing test results...'
+            archiveArtifacts artifacts: 'target/*.jar', allowEmptyArchive: true
+            junit 'target/surefire-reports/*.xml'
+        }
+
+        failure {
+            echo 'Pipeline failed. Check logs for details.'
+        }
+
+        always {
+            echo 'Pipeline finished.'
         }
     }
 }
