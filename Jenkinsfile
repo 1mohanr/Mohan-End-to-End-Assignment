@@ -13,8 +13,10 @@ pipeline {
         stage('Prepare') {
             steps {
                 script {
-                    // sanitize branch name for Docker tag
-                    env.BRANCH_NAME_SAFE = env.BRANCH_NAME.replaceAll('/', '-')
+                    // Sanitize branch name for Docker tag, default to 'name.developer'
+                    def branchName = env.BRANCH_NAME ?: "name.developer"
+                    env.BRANCH_NAME_SAFE = branchName.replaceAll('/', '-')
+                    echo "Branch name safe for Docker: ${env.BRANCH_NAME_SAFE}"
                 }
             }
         }
